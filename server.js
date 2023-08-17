@@ -41,6 +41,7 @@ const grantConfig = {
         "key": process.env.DISCOGS_CONSUMER_KEY,
         "secret": process.env.DISCOGS_CONSUMER_SECRET,
         "callback": "/auth/discogs/callback",
+        "request_url": "https://api.discogs.com/oauth/request_token",
         "authorize_url": "https://www.discogs.com/oauth/authorize",
         "access_url": "https://api.discogs.com/oauth/access_token",
         "oauth": 1
@@ -98,13 +99,10 @@ app.get('/callback', async (req, res) => {
     }
 });
 
-app.get('/auth/discogs/callback', (req, res) => {
-    if (req.session.grant && req.session.grant.response) {
-        const { access_token, access_secret } = req.session.grant.response;
-        req.session.oauth = {
-            accessToken: access_token,
-            accessTokenSecret: access_secret
-        };
+app.get('/auth/discogs/callback', async (req, res, next) => {
+    // console.log("auth", req.session.grant)
+
+    if (req.session.grant?.response) {
         res.redirect('http://localhost:3001/?discogsAuthSuccess=true');
     } else {
         console.error('Error during Discogs OAuth callback.');
@@ -119,25 +117,34 @@ app.get('/test-session', (req, res) => {
 app.get('/search-discogs/:query', async (req, res) => {
     const query = req.params.query;
 
-    if (!req.session.oauth || !req.session.oauth.accessToken) {
+    if (!req.session?.grant?.response) {
         console.error('Not authenticated with Discogs. Missing OAuth tokens in session.');
         return res.status(401).send('Not authenticated with Discogs');
     }
 
-    const accessToken = req.session.oauth.accessToken;
+    const { access_secret: tokenSecret, access_token: token }  = req.session.grant.response
 
     try {
-        const response = await axios.get(`https://api.discogs.com/database/search?q=${query}&format=vinyl`, {
+        const response = await axios.get(`https://api.discogs.com/database/search?q=${query}&format=vinyl&per_page=10`, {
             headers: {
-                'Authorization': `OAuth oauth_consumer_key="${process.env.DISCOGS_CONSUMER_KEY}",oauth_token="${accessToken}",oauth_signature_method="HMAC-SHA1",oauth_timestamp="${Math.floor(Date.now() / 1000)}",oauth_nonce="${Math.random().toString(36).substr(2)}",oauth_version="1.0"`
+                'Authorization': `OAuth oauth_consumer_key="${process.env.DISCOGS_CONSUMER_KEY}",oauth_signature="${process.env.DISCOGS_CONSUMER_SECRET}%26${tokenSecret}",oauth_token="${token}",oauth_signature_method="PLAINTEXT",oauth_timestamp="${Math.floor(Date.now() / 1000)}",oauth_nonce="${Math.random().toString(36).substr(2)}",oauth_version="1.0"`
             }
         });
-        res.json(response.data);
+
+        // Filter the results to get only the first release
+        const releases = response.data.results.filter(item => item.type === 'release');
+        const limitedResults = releases.length > 0 ? [releases[0]] : [];
+
+        res.json(limitedResults);
     } catch (error) {
         console.error("Error fetching data from Discogs:", error.message);
         res.status(500).send('Error making authenticated request');
     }
 });
+
+
+
+
 
 // Start the server
 app.listen(PORT, () => {

@@ -69,21 +69,34 @@ useEffect(() => {
     window.location.href = 'http://localhost:3000/connect/discogs';
   };
 
-  const fetchDiscogsData = (query) => {
-    setSearchQueries(prev => [...prev, query]);
-    axios.get(`http://localhost:3000/search-discogs/${encodeURIComponent(query)}`)
-      .then(response => {
-        setDiscogsResults(response.data);
-      })
-      .catch(error => {
-        console.error("Error fetching data from Discogs:", error);
-      });
-  };
+  const fetchDiscogsData = (albumName, artistName) => {
+    const discogsQuery = `${artistName} ${albumName} vinyl`;
+
+    // Add the current query to the searchQueries state
+    setSearchQueries(prev => [...prev, discogsQuery]);
+
+    const endpointURL = `http://localhost:3000/search-discogs/${encodeURIComponent(discogsQuery)}`;
+
+    axios.get(endpointURL, {
+        withCredentials: true
+    })
+    .then(response => {
+        const results = response.data.results;
+        setDiscogsResults(prev => [...prev, results]);
+    })
+    .catch(error => {
+        console.error("Error fetching data from Discogs Marketplace:", error);
+    });
+};
+
 
   useEffect(() => {
     if (likedItems.length > 0 && discogsAuthenticated) {
-      const searchQuery = likedItems[0].album.name;
-      fetchDiscogsData(searchQuery);
+      likedItems.forEach(item => {
+        const albumName = item.album.name;
+        const artistName = item.album.artists[0].name; // Assuming the first artist is the primary artist
+        fetchDiscogsData(albumName, artistName);
+      });
     }
   }, [likedItems, discogsAuthenticated]);
 
@@ -100,9 +113,11 @@ useEffect(() => {
           <h2>Discogs Marketplace Results:</h2>
           {discogsResults.map(item => (
             <div key={item.id}>
-              <h3>{item.title}</h3>
-              <img src={item.thumb} alt={item.title} />
-              <a href={`https://www.discogs.com/sell/item/${item.id}`} target="_blank" rel="noopener noreferrer">Buy on Discogs</a>
+                <h3>{item.title}</h3>
+                <img src={item.thumb} alt={item.title} />
+                {item.marketplaceId && (
+                    <a href={`https://www.discogs.com/sell/item/${item.marketplaceId}`} target="_blank" rel="noopener noreferrer">Buy on Discogs</a>
+                )}
             </div>
           ))}
         </div>
